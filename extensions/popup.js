@@ -248,6 +248,12 @@ function loadHistory() {
     });
 }
 
+loadHistory();
+/* =========================
+   INITIAL LOAD
+========================= */
+
+updateDashboard();
 function updateDashboard() {
 
     chrome.storage.local.get(["history"], (result) => {
@@ -257,21 +263,15 @@ function updateDashboard() {
         const totalInterviews = history.length;
 
         const avg = totalInterviews
-            ? (history.reduce((sum, item) => sum + item.score, 0) / totalInterviews).toFixed(1)
+            ? (history.reduce((sum, item) => sum + Number(item.score), 0) / totalInterviews).toFixed(1)
             : 0;
 
         document.getElementById("totalCount").innerText = totalInterviews;
-        document.getElementById("avgScore").innerText = avg;
+        document.getElementById("avgScore").innerText = avg + "/100";
     });
 }
 
 
-/* =========================
-   INITIAL LOAD
-========================= */
-
-updateDashboard();
-loadHistory();
 
 });
 /* =========================
@@ -296,3 +296,4 @@ document.getElementById("clearHistoryBtn").addEventListener("click", () => {
         alert("History cleared successfully.");
     });
 });
+

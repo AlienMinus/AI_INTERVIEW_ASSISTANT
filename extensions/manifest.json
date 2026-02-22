@@ -11,7 +11,11 @@
     }
   },
   "permissions": ["storage"],
+  "host_permissions": [
+    "https://chatgpt-42.p.rapidapi.com/*"
+  ],
   "background": {
     "service_worker": "background.js"
   }
+  
 }
