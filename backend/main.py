@@ -5,6 +5,9 @@ import os
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
+import logging
+logging.getLogger('tensorflow').setLevel(logging.ERROR)
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -12,12 +15,17 @@ from dotenv import load_dotenv
 from nlp_engine import extract_keywords
 from scoring import compute_similarity, find_missing_skills, evaluate_answer
 from question_generator import generate_questions
+from cheating_detection import HeadMovementDetector
 
 load_dotenv()
 
 app = Flask(__name__)
+app.config['JSON_AS_ASCII'] = False
 CORS(app)
 
+
+# Initialize Cheating Detector
+cheating_detector = HeadMovementDetector()
 
 @app.route("/")
 def home():
@@ -35,7 +43,6 @@ def analyze():
     data = request.json
     resume_text = data.get("resume")
     jd_text = data.get("job_description")
-    api_key = data.get("api_key") or os.getenv("RAPID_API_KEY")
 
     if not resume_text or not jd_text:
         return jsonify({"error": "Missing resume or job description"}), 400
@@ -58,8 +65,7 @@ def analyze():
         resume_keywords,
         jd_keywords,
         missing_skills,
-        score,
-        api_key
+        score
     )
 
     return jsonify({
@@ -112,6 +118,29 @@ def extract_text():
         return jsonify({"text": text})
 
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/detect-cheating", methods=["POST"])
+def detect_cheating():
+    if "image" not in request.files:
+        return jsonify({"error": "No image uploaded"}), 400
+
+    try:
+        file = request.files["image"]
+        # Convert file to numpy array for OpenCV
+        import numpy as np
+        import cv2
+        npimg = np.frombuffer(file.read(), np.uint8)
+        img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
+        if img is None:
+            return jsonify({"error": "Failed to decode image"}), 400
+
+        status, details, box = cheating_detector.detect(img)
+        return jsonify({"status": status, "details": details, "box": box})
+
+    except Exception as e:
+        print(f"Cheating detection error: {e}")
         return jsonify({"error": str(e)}), 500
 
 

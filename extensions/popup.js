@@ -4,7 +4,7 @@ let interviewState = {
     questions: [],
     currentIndex: 0,
     totalScore: 0,
-    backendUrl: "https://ai-interview-backend-i7qz.onrender.com/",  // Enforce default backend URL
+    backendUrl: "http://localhost:5000",  // Enforce default backend URL
     timerInterval: null,
     typingInterval: null,
     recognition: null,
@@ -13,7 +13,9 @@ let interviewState = {
     analyser: null,
     mediaStream: null,
     visualizerFrame: null,
-    cameraStream: null
+    cameraStream: null,
+    cheatingInterval: null,
+    cheatingIncidents: 0
 };
 
 /* ================= NAVIGATION ================= */
@@ -127,6 +129,8 @@ document.getElementById("extractTextBtn").onclick = async () => {
 
 document.getElementById("startInterviewBtn").onclick = async () => {
 
+    interviewState.cheatingIncidents = 0;
+
     chrome.storage.local.get(["jobDesc","resume"], async data => {
 
         if (!data.jobDesc || !data.resume) {
@@ -136,7 +140,9 @@ document.getElementById("startInterviewBtn").onclick = async () => {
 
         await runCountdown();
 
-        startCamera();
+        await startCamera();
+        
+        startCheatingDetection();
 
         const analysisBox = document.getElementById("analysisBox");
 
@@ -532,9 +538,13 @@ function loadHistory(){
         container.innerHTML="";
         history.slice().reverse().forEach(item=>{
             const score = (item.score !== undefined && item.score !== null) ? Number(item.score) : 0;
+            const cheating = item.cheatingCount || 0;
             container.innerHTML+=
                 `<strong>${item.date}</strong><br>
-                 Score: ${score.toFixed(2)}/100<hr>`;
+                 Score: ${score.toFixed(2)}/100<br>
+                 <span style="color:${cheating > 0 ? '#e74c3c' : '#2ecc71'}">
+                    ⚠️ Cheating Alerts: ${cheating}
+                 </span><hr>`;
         });
     });
 }
@@ -666,8 +676,10 @@ async function startCamera() {
 
         interviewState.cameraStream = stream;
         const video = document.getElementById("cameraPreview");
+        const overlay = document.getElementById("faceOverlay");
         video.srcObject = stream;
         video.style.display = "block";
+        if (overlay) overlay.style.display = "block";
     } catch (err) {
         console.error("Camera access denied:", err);
 
@@ -676,19 +688,191 @@ async function startCamera() {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true });
             interviewState.cameraStream = stream;
             const video = document.getElementById("cameraPreview");
+            const overlay = document.getElementById("faceOverlay");
             video.srcObject = stream;
             video.style.display = "block";
+            if (overlay) overlay.style.display = "block";
         } catch (err2) {
             alert("Access denied. Please allow Camera permissions.");
         }
     }
+    
+    // Wait for video to actually start playing
+    return new Promise(resolve => {
+        const video = document.getElementById("cameraPreview");
+        if (video.readyState >= 3) resolve();
+        else video.oncanplay = resolve;
+    });
 }
 
 function stopCamera() {
+    if (interviewState.cheatingInterval) {
+        clearInterval(interviewState.cheatingInterval);
+        interviewState.cheatingInterval = null;
+    }
     if (interviewState.cameraStream) {
         interviewState.cameraStream.getTracks().forEach(track => track.stop());
         document.getElementById("cameraPreview").style.display = "none";
+        const overlay = document.getElementById("faceOverlay");
+        if (overlay) overlay.style.display = "none";
     }
+}
+
+function startCheatingDetection() {
+    if (interviewState.cheatingInterval) clearInterval(interviewState.cheatingInterval);
+
+    interviewState.cheatingInterval = setInterval(() => {
+        const video = document.getElementById("cameraPreview");
+        const overlay = document.getElementById("faceOverlay");
+        if (!video || video.paused || video.ended || !video.videoWidth) return;
+
+        // Sync overlay resolution
+        if (overlay && (overlay.width !== video.videoWidth || overlay.height !== video.videoHeight)) {
+            overlay.width = video.videoWidth;
+            overlay.height = video.videoHeight;
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        canvas.toBlob(async (blob) => {
+            if (!blob) return;
+
+            const formData = new FormData();
+            formData.append("image", blob, "frame.jpg");
+
+            try {
+                const response = await fetch(`${interviewState.backendUrl}/detect-cheating`, {
+                    method: "POST",
+                    body: formData
+                });
+                const data = await response.json();
+                
+                // Draw bounding box
+                if (overlay && data.box) {
+                    const ctx = overlay.getContext("2d");
+                    ctx.clearRect(0, 0, overlay.width, overlay.height);
+                    
+                    const [x1, y1, x2, y2] = data.box;
+                    const w = x2 - x1;
+                    const h = y2 - y1;
+                    
+                    // Make it a square based on the larger dimension
+                    const size = Math.max(w, h);
+                    
+                    // Shrink box by 20% for better fit
+                    const scale = 0.4;
+                    const finalSize = size * scale;
+                    
+                    // Center the square on the original center
+                    const cx = x1 + w / 2;
+                    const cy = y1 + h / 2;
+                    
+                    const sx = cx - finalSize / 2;
+                    const sy = cy - finalSize / 2;
+
+                    const color = data.status === "WARNING" ? "#e74c3c" : "#004cff";
+                    ctx.strokeStyle = color;
+                    
+                    // Scale visuals based on canvas resolution (assuming ~100px display width)
+                    const ratio = overlay.width / 120;
+                    ctx.lineWidth = 3 * ratio;
+
+                    ctx.beginPath();
+                    if (ctx.roundRect) {
+                        ctx.roundRect(sx, sy, finalSize, finalSize, 15 * ratio);
+                    } else {
+                        ctx.rect(sx, sy, finalSize, finalSize);
+                    }
+                    ctx.stroke();
+
+                    // Draw Label
+                    if (data.details) {
+                        ctx.save();
+                        const fontSize = 14 * ratio;
+                        ctx.font = "bold " + fontSize + "px Arial";
+                        const text = data.details;
+                        const textMetrics = ctx.measureText(text);
+                        const textWidth = textMetrics.width;
+                        const padding = 4 * ratio;
+                        const bgHeight = fontSize + padding;
+                        const bgWidth = textWidth + padding * 2;
+
+                        ctx.translate(sx + finalSize / 2, sy - (8 * ratio));
+                        ctx.scale(-1, 1); // Counteract CSS mirror
+
+                        // Draw Background
+                        ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+                        if (ctx.roundRect) {
+                            ctx.beginPath();
+                            ctx.roundRect(-bgWidth / 2, -bgHeight / 2, bgWidth, bgHeight, 4 * ratio);
+                            ctx.fill();
+                        } else {
+                            ctx.fillRect(-bgWidth / 2, -bgHeight / 2, bgWidth, bgHeight);
+                        }
+
+                        // Draw Text
+                        ctx.fillStyle = color;
+                        ctx.textAlign = "center";
+                        ctx.textBaseline = "middle";
+                        ctx.fillText(text, 0, 0);
+                        ctx.restore();
+                    }
+                }
+
+                if (data.status === "WARNING") {
+                    interviewState.cheatingIncidents++;
+                    playAlertSound();
+                    showCheatingWarning(data.details);
+                    video.style.borderColor = "#e74c3c";
+                    video.style.boxShadow = "0 0 20px rgba(231, 76, 60, 0.8)";
+                } else {
+                    video.style.borderColor = "#2ecc71";
+                    video.style.boxShadow = "0 2px 10px rgba(0,0,0,0.3)";
+                }
+            } catch (err) {
+                console.error("Cheating detection error:", err);
+            }
+        }, "image/jpeg");
+    }, 3000);
+}
+
+function showCheatingWarning(message) {
+    let warningBox = document.getElementById("cheatingWarning");
+    if (!warningBox) {
+        warningBox = document.createElement("div");
+        warningBox.id = "cheatingWarning";
+        warningBox.style.cssText = "position:fixed; top:10px; left:50%; transform:translateX(-50%); background:rgba(231,76,60,0.9); color:white; padding:10px 20px; border-radius:5px; z-index:4000; font-weight:bold; display:none; box-shadow: 0 2px 10px rgba(0,0,0,0.2);";
+        document.body.appendChild(warningBox);
+    }
+    warningBox.innerText = `⚠️ ${message}`;
+    warningBox.style.display = "block";
+    
+    setTimeout(() => {
+        warningBox.style.display = "none";
+    }, 2500);
+}
+
+function playAlertSound() {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.type = "sine";
+    osc.frequency.value = 880; // A5
+    gain.gain.value = 0.1;
+
+    osc.start();
+    setTimeout(() => {
+        osc.stop();
+        ctx.close();
+    }, 200);
 }
 
 function runCountdown() {
@@ -713,4 +897,4 @@ function runCountdown() {
     });
 }
 
-});
+}); 

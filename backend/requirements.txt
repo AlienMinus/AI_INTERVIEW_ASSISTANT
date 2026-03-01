@@ -11,3 +11,4 @@ tf-keras
 python-docx
 pypdf
 waitress
+ultralytics

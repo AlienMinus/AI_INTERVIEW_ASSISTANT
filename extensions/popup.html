@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
     <title>AI Interview</title>
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet"
@@ -12,6 +13,7 @@
 
     <!-- CAMERA PREVIEW -->
     <video id="cameraPreview" autoplay muted style="position: fixed; top: 55px; right: 10px; width: 100px; height: 75px; border-radius: 8px; border: 2px solid #fff; box-shadow: 0 2px 10px rgba(0,0,0,0.3); object-fit: cover; z-index: 2000; display: none; transform: scaleX(-1);"></video>
+    <canvas id="faceOverlay" style="position: fixed; top: 55px; right: 10px; width: 100px; height: 75px; border-radius: 8px; pointer-events: none; z-index: 2001; display: none; transform: scaleX(-1);"></canvas>
 
     <!-- COUNTDOWN OVERLAY -->
     <div id="countdownDisplay" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 5rem; font-weight: bold; color: #3498db; display: none; z-index: 3000; text-shadow: 2px 2px 4px rgba(0,0,0,0.5);"></div>
