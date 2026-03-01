@@ -10,6 +10,12 @@
 
 <div class="container">
 
+    <!-- CAMERA PREVIEW -->
+    <video id="cameraPreview" autoplay muted style="position: fixed; top: 55px; right: 10px; width: 100px; height: 75px; border-radius: 8px; border: 2px solid #fff; box-shadow: 0 2px 10px rgba(0,0,0,0.3); object-fit: cover; z-index: 2000; display: none; transform: scaleX(-1);"></video>
+
+    <!-- COUNTDOWN OVERLAY -->
+    <div id="countdownDisplay" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 5rem; font-weight: bold; color: #3498db; display: none; z-index: 3000; text-shadow: 2px 2px 4px rgba(0,0,0,0.5);"></div>
+
     <!-- NAVBAR -->
     <div class="navbar">
         <div class="logo">
@@ -29,9 +35,9 @@
         <h2>Dashboard</h2>
         <p>Total Interviews: <span id="totalCount">0</span></p>
         <p>Average Score: <span id="avgScore">0</span></p>
-        <div class="chart-container">
-            <h3>Performance Trend</h3>
-            <svg id="scoreChart" viewBox="0 0 340 150"></svg>
+        <h3>Performance Trend</h3>
+        <div class="chart-container" style="position: relative; height: 250px; width: 100%;">
+            <canvas id="scoreChart"></canvas>
         </div>
     </div>
 
@@ -41,10 +47,18 @@
 
         <button id="startInterviewBtn">Start Interview</button>
 
+        <div id="analysisBox"></div>
+        <div id="timerDisplay" style="font-weight:bold; color:#e74c3c; margin: 10px 0;"></div>
         <div id="questionBox"></div>
 
-        <textarea id="answerInput" placeholder="Type your answer..."></textarea>
-        <button id="submitBtn">Submit Answer</button>
+        <div id="interviewInterface" style="display:none;">
+            <textarea id="answerInput" placeholder="Type your answer..."></textarea>
+            <div style="display:flex; gap:10px; margin-top:10px;">
+                <button id="micBtn" style="width: 50px; background: #95a5a6;"><i class="fa-solid fa-microphone"></i></button>
+                <canvas id="micVisualizer" height="35" width="100" style="display:none; background: #2c3e50; border-radius: 4px;"></canvas>
+                <button id="submitBtn" style="flex:1;">Submit Answer</button>
+            </div>
+        </div>
 
         <div id="resultBox"></div>
     </div>
@@ -52,9 +66,7 @@
     <!-- HISTORY -->
     <div id="history" class="section">
         <h2>History</h2>
-        <button id="clearHistoryBtn" class="danger-btn">
-        Clear History
-    </button>
+        <button id="clearHistoryBtn" class="danger-btn">Clear History</button>
         <div id="historyList"></div>
     </div>
 
@@ -62,32 +74,37 @@
     <div id="settings" class="section">
         <h2>Settings</h2>
 
-        <input type="text" id="apiKeyInput" placeholder="Enter RapidAPI Key">
-        <button id="saveApiBtn">Save Key</button>
-
         <h3>Job Description</h3>
         <textarea id="jobDescInput" placeholder="Paste Job Description here"></textarea>
 
         <h3>Resume</h3>
+
         <div id="dropZone" class="drop-zone">
             <i class="fa-solid fa-cloud-arrow-up"></i>
             <p>Drag & Drop or Click to Upload</p>
-            <input type="file" id="fileInput" accept=".docx, .pdf" style="display: none;">
+            <input type="file" id="fileInput" accept=".docx, .pdf" hidden>
         </div>
-        <div id="fileNameDisplay" class="file-name-display"></div>
 
-        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-            <button id="extractTextBtn" style="flex: 1;">Extract Text</button>
-            <button id="clearResumeBtn" class="danger-btn" style="padding: 0 15px;" title="Clear"><i class="fa-solid fa-trash"></i></button>
+        <div id="fileNameDisplay"></div>
+
+        <div style="display:flex; gap:10px; margin-bottom:10px;">
+            <button id="extractTextBtn" style="flex:1;">Extract Text</button>
+            <button id="clearResumeBtn" class="danger-btn">
+                <i class="fa-solid fa-trash"></i>
+            </button>
         </div>
+
         <div id="status"></div>
-        <textarea id="resumeInput" placeholder="Paste Resume text here"></textarea>
+
+        <textarea id="resumeInput"
+                  placeholder="Resume text will appear here"></textarea>
 
         <button id="saveProfileBtn">Save Profile</button>
     </div>
 
 </div>
 
+<script src="chart.js"></script>
 <script src="popup.js"></script>
 </body>
 </html>

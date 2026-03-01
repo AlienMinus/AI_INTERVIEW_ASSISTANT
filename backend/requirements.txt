@@ -3,5 +3,10 @@ flask-cors
 sentence-transformers
 scikit-learn
 keybert
-numpy
+numpy<2
 torch
+python-dotenv
+opencv-python-headless<4.10
+tf-keras
+python-docx
+pypdf

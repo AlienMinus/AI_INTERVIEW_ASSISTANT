@@ -10,7 +10,7 @@
       
     }
   },
-  "permissions": ["storage"],
+  "permissions": ["storage", "notifications", "tabs", "activeTab", "scripting"],
   "host_permissions": [
     "https://chatgpt-42.p.rapidapi.com/*",
     "https://doc-converter-vdh0.onrender.com/*",

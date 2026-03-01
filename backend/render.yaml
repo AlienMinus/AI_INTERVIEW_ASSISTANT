@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: ai-interview-backend
+    env: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: RAPID_API_KEY
+        sync: false

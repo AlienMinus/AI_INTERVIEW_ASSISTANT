@@ -1,11 +1,19 @@
 # main.py
 
+import os
+# Suppress TensorFlow logs
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from dotenv import load_dotenv
 
 from nlp_engine import extract_keywords
 from scoring import compute_similarity, find_missing_skills, evaluate_answer
 from question_generator import generate_questions
+
+load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
@@ -16,13 +24,18 @@ def home():
     return jsonify({"message": "AI Interview Backend Running"})
 
 
+@app.route("/health")
+def health():
+    return jsonify({"status": "healthy"}), 200
+
+
 @app.route("/analyze", methods=["POST"])
 def analyze():
 
     data = request.json
     resume_text = data.get("resume")
     jd_text = data.get("job_description")
-    api_key = data.get("api_key")
+    api_key = data.get("api_key") or os.getenv("RAPID_API_KEY")
 
     if not resume_text or not jd_text:
         return jsonify({"error": "Missing resume or job description"}), 400
@@ -75,5 +88,33 @@ def evaluate():
     })
 
 
+@app.route("/extract-text", methods=["POST"])
+def extract_text():
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+
+    file = request.files["file"]
+    filename = file.filename.lower()
+    text = ""
+
+    try:
+        if filename.endswith(".docx"):
+            import docx
+            doc = docx.Document(file)
+            text = "\n".join([para.text for para in doc.paragraphs])
+        elif filename.endswith(".pdf"):
+            import pypdf
+            reader = pypdf.PdfReader(file)
+            text = "\n".join([page.extract_text() for page in reader.pages])
+        else:
+            return jsonify({"error": "Unsupported file type"}), 400
+
+        return jsonify({"text": text})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
