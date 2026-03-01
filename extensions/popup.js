@@ -4,7 +4,7 @@ let interviewState = {
     questions: [],
     currentIndex: 0,
     totalScore: 0,
-    backendUrl: "http://localhost:5000",  // Enforce default backend URL
+    backendUrl: "https://ai-interview-backend-i7qz.onrender.com/",  // Enforce default backend URL
     timerInterval: null,
     typingInterval: null,
     recognition: null,

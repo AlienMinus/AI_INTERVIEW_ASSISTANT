@@ -14,7 +14,8 @@
   "host_permissions": [
     "https://chatgpt-42.p.rapidapi.com/*",
     "https://doc-converter-vdh0.onrender.com/*",
-    "https://doc-manipulation.vercel.app/*"
+    "https://doc-manipulation.vercel.app/*",
+    "https://ai-interview-backend-i7qz.onrender.com/*"
   ],
   "background": {
     "service_worker": "background.js"

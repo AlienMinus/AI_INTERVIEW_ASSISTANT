@@ -10,3 +10,4 @@ opencv-python-headless<4.10
 tf-keras
 python-docx
 pypdf
+waitress

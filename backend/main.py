@@ -116,5 +116,7 @@ def extract_text():
 
 
 if __name__ == "__main__":
+    from waitress import serve
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    print(f"Server running on http://localhost:{port}")
+    serve(app, host="0.0.0.0", port=port)
