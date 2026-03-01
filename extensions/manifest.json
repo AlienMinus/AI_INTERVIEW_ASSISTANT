@@ -12,7 +12,9 @@
   },
   "permissions": ["storage"],
   "host_permissions": [
-    "https://chatgpt-42.p.rapidapi.com/*"
+    "https://chatgpt-42.p.rapidapi.com/*",
+    "https://doc-converter-vdh0.onrender.com/*",
+    "https://doc-manipulation.vercel.app/*"
   ],
   "background": {
     "service_worker": "background.js"

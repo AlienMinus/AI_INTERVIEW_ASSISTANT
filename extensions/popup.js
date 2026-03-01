@@ -259,16 +259,57 @@ function updateDashboard() {
     chrome.storage.local.get(["history"], (result) => {
 
         const history = result.history || [];
+        
+        // Fix: Filter out invalid scores to prevent NaN errors
+        const validHistory = history.filter(h => !isNaN(parseFloat(h.score)));
+        const totalInterviews = validHistory.length;
 
-        const totalInterviews = history.length;
-
-        const avg = totalInterviews
-            ? (history.reduce((sum, item) => sum + Number(item.score), 0) / totalInterviews).toFixed(1)
+        const avg = totalInterviews > 0
+            ? (validHistory.reduce((sum, item) => sum + Number(item.score), 0) / totalInterviews).toFixed(1)
             : 0;
 
         document.getElementById("totalCount").innerText = totalInterviews;
         document.getElementById("avgScore").innerText = avg + "/100";
+        
+        renderChart(validHistory);
     });
+}
+
+function renderChart(history) {
+    const svg = document.getElementById("scoreChart");
+    if (!svg) return;
+
+    if (history.length === 0) {
+        svg.innerHTML = "";
+        return;
+    }
+
+    const width = 340;
+    const height = 150;
+    const padding = 15;
+
+    // Scales
+    const getX = (i) => padding + (i / (history.length - 1 || 1)) * (width - 2 * padding);
+    const getY = (score) => height - padding - (score / 100) * (height - 2 * padding);
+
+    let svgContent = "";
+
+    // Grid Lines (0, 50, 100)
+    [0, 50, 100].forEach(val => {
+        const y = getY(val);
+        svgContent += `<line x1="${padding}" y1="${y}" x2="${width - padding}" y2="${y}" class="chart-grid" />`;
+    });
+
+    // Line Path
+    const points = history.map((item, i) => `${getX(i)},${getY(item.score)}`).join(" ");
+    svgContent += `<polyline points="${points}" class="chart-line" />`;
+
+    // Data Points
+    history.forEach((item, i) => {
+        svgContent += `<circle cx="${getX(i)}" cy="${getY(item.score)}" r="4" class="chart-dot"><title>${item.date}: ${item.score}</title></circle>`;
+    });
+
+    svg.innerHTML = svgContent;
 }
 
 
@@ -297,3 +338,110 @@ document.getElementById("clearHistoryBtn").addEventListener("click", () => {
     });
 });
 
+/* =========================
+   DOCX TEXT EXTRACTOR
+========================= */
+
+const dropZone = document.getElementById("dropZone");
+const fileInput = document.getElementById("fileInput");
+const fileNameDisplay = document.getElementById("fileNameDisplay");
+
+// Drag & Drop Logic
+dropZone.addEventListener("click", () => fileInput.click());
+
+dropZone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropZone.classList.add("dragover");
+});
+
+dropZone.addEventListener("dragleave", () => {
+    dropZone.classList.remove("dragover");
+});
+
+dropZone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropZone.classList.remove("dragover");
+    if (e.dataTransfer.files.length) {
+        fileInput.files = e.dataTransfer.files;
+        updateFileName();
+    }
+});
+
+fileInput.addEventListener("change", updateFileName);
+
+function updateFileName() {
+    fileNameDisplay.textContent = fileInput.files.length ? `Selected: ${fileInput.files[0].name}` : "";
+    fileNameDisplay.style.display = fileInput.files.length ? "block" : "none";
+}
+
+document.getElementById("clearResumeBtn").addEventListener("click", () => {
+    document.getElementById("resumeInput").value = "";
+    fileInput.value = "";
+    updateFileName();
+    document.getElementById("status").innerHTML = "";
+});
+
+document.getElementById("extractTextBtn").addEventListener("click", extractText);
+
+async function extractText() {
+    const fileInput = document.getElementById("fileInput");
+    const status = document.getElementById("status");
+    status.innerHTML = "";
+
+    if (!fileInput.files.length) {
+        status.innerHTML = "<div class='error'>Please select a file (.pdf or .docx)</div>";
+        return;
+    }
+
+    let file = fileInput.files[0];
+    const extension = file.name.split('.').pop().toLowerCase();
+
+    status.innerHTML = "<div class='loading'><div class='spinner'></div> Processing...</div>";
+
+    try {
+        // STEP 1: Convert PDF to DOCX if needed
+        if (extension === "pdf") {
+            const convertForm = new FormData();
+            convertForm.append("file", file);
+
+            const convertResponse = await fetch(
+                "https://doc-converter-vdh0.onrender.com/api/pdf-to-docx",
+                { method: "POST", body: convertForm }
+            );
+
+            if (!convertResponse.ok) {
+                const err = await convertResponse.json();
+                throw new Error(err.error || "PDF Conversion Failed");
+            }
+
+            const convertedBlob = await convertResponse.blob();
+            file = new File([convertedBlob], file.name.replace(".pdf", ".docx"), {
+                type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            });
+        }
+
+        // STEP 2: Extract text
+        const extractForm = new FormData();
+        extractForm.append("file", file);
+
+        const response = await fetch(
+            "https://doc-manipulation.vercel.app/api/text",
+            { method: "POST", body: extractForm }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) throw new Error(data.error || "Text extraction failed");
+
+        status.innerHTML = "";
+        document.getElementById("resumeInput").value = data.text;
+
+        const jobDesc = document.getElementById("jobDescInput").value;
+        chrome.storage.local.set({ jobDesc, resume: data.text }, () => {
+            alert("Resume extracted and saved to profile!");
+        });
+
+    } catch (error) {
+        status.innerHTML = `<div class='error'>Error: ${error.message}</div>`;
+    }
+}
