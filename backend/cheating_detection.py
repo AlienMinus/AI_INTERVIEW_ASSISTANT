@@ -1,5 +1,14 @@
 import os
-import cv2
+try:
+    import cv2
+except ImportError as e:
+    if "libGL.so.1" in str(e):
+        raise ImportError(
+            "Missing system dependencies for OpenCV (libGL.so.1). "
+            "Please install 'opencv-python-headless' instead of 'opencv-python', "
+            "or install 'libgl1' in your environment."
+        ) from e
+    raise e
 import numpy as np
 from ultralytics import YOLO
 import requests
