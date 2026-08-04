@@ -11,7 +11,7 @@ ARG HF_TOKEN
 ENV HF_TOKEN=${HF_TOKEN}
 
 # Install system dependencies for OpenCV
-RUN apt-get update && apt-get install -y libgl1-mesa-glx libglib2.0-0 libxcb1
+RUN apt-get update && apt-get install -y libgl1 libglib2.0-0 libxcb1
 
 # Copy requirements first to leverage Docker cache
 COPY requirements.txt .
