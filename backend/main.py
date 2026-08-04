@@ -25,7 +25,7 @@ CORS(app)
 
 
 # Initialize Cheating Detector
-cheating_detector = HeadMovementDetector()
+cheating_detector = None
 
 @app.route("/")
 def home():
@@ -123,6 +123,11 @@ def extract_text():
 
 @app.route("/detect-cheating", methods=["POST"])
 def detect_cheating():
+    global cheating_detector
+    if cheating_detector is None:
+        print("Initializing Cheating Detector...")
+        cheating_detector = HeadMovementDetector()
+
     if "image" not in request.files:
         return jsonify({"error": "No image uploaded"}), 400
 
