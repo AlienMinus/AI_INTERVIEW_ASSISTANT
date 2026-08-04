@@ -8,6 +8,10 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    python -m venv /app/.venv
+ENV VIRTUAL_ENV=/app/.venv
+ENV PATH="/app/.venv/bin:$PATH"
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application
@@ -20,4 +24,4 @@ RUN python -c "from nlp_engine import extract_keywords; print('Models downloaded
 EXPOSE 5000
 
 # Run the application
-CMD ["python", "-u", "main.py"]
+CMD ["/app/.venv/bin/python", "-u", "main.py"]
