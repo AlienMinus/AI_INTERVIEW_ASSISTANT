@@ -4,6 +4,12 @@ FROM python:3.12-slim
 # Set working directory
 WORKDIR /app
 
+# Declare HF_TOKEN as a build argument
+ARG HF_TOKEN
+
+# Set HF_TOKEN as an environment variable if provided during build
+ENV HF_TOKEN=${HF_TOKEN}
+
 # Copy requirements first to leverage Docker cache
 COPY requirements.txt .
 
