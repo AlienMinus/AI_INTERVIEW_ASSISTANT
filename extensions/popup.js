@@ -4,7 +4,7 @@ let interviewState = {
     questions: [],
     currentIndex: 0,
     totalScore: 0,
-    backendUrl: "https://ai-interview-backend-i7qz.onrender.com",  // Enforce default backend URL
+    backendUrl: "http://localhost:5000",  // Enforce default backend URL
     timerInterval: null,
     typingInterval: null,
     recognition: null,
@@ -140,8 +140,15 @@ document.getElementById("startInterviewBtn").onclick = async () => {
 
         await runCountdown();
 
-        await startCamera();
         
+        // Camera is required for the interview / cheating detection.
+        const cameraStarted = await startCamera();
+
+        if (!cameraStarted) {
+            console.warn("Interview cancelled: camera could not be started.");
+            return;
+        }
+
         startCheatingDetection();
 
         const analysisBox = document.getElementById("analysisBox");
@@ -646,75 +653,325 @@ updateDashboard();
 
 /* ================= CAMERA ================= */
 
-async function startCamera() {
-    try {
-        // Request both Camera and Microphone permissions
-        let stream = await navigator.mediaDevices.getUserMedia({ 
-            video: true, 
-            audio: true 
-        });
-        
-        // Stop audio tracks (only need video preview initially)
-        stream.getAudioTracks().forEach(track => track.stop());
+/**
+ * Camera manager
+ *
+ * Camera and microphone permissions are intentionally separate.
+ * startCamera() requests video only.
+ * startRecording() requests microphone only.
+ */
 
-        // Check for Phone Link interference and switch if necessary
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter(d => d.kind === 'videoinput');
-        const currentLabel = stream.getVideoTracks()[0].label;
+function getCameraElements() {
+    return {
+        video: document.getElementById("cameraPreview"),
+        overlay: document.getElementById("faceOverlay")
+    };
+}
 
-        if (currentLabel.includes("Phone Link") || currentLabel.includes("Virtual")) {
-            const betterDevice = videoDevices.find(d => 
-                !d.label.includes("Phone Link") && !d.label.includes("Virtual")
-            );
-            if (betterDevice) {
-                stream.getTracks().forEach(t => t.stop());
-                stream = await navigator.mediaDevices.getUserMedia({
-                    video: { deviceId: { exact: betterDevice.deviceId } }
-                });
-            }
-        }
+function isCameraApiAvailable() {
+    return !!(
+        navigator.mediaDevices &&
+        typeof navigator.mediaDevices.getUserMedia === "function"
+    );
+}
 
-        interviewState.cameraStream = stream;
-        const video = document.getElementById("cameraPreview");
-        const overlay = document.getElementById("faceOverlay");
-        video.srcObject = stream;
-        video.style.display = "block";
-        if (overlay) overlay.style.display = "block";
-    } catch (err) {
-        console.error("Camera access denied:", err);
+function getCameraErrorMessage(error) {
+    const name = error?.name || "UnknownError";
+    const message = error?.message || "Unknown camera error.";
 
-        // Fallback: Try video only (in case audio permission is blocked)
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-            interviewState.cameraStream = stream;
-            const video = document.getElementById("cameraPreview");
-            const overlay = document.getElementById("faceOverlay");
-            video.srcObject = stream;
-            video.style.display = "block";
-            if (overlay) overlay.style.display = "block";
-        } catch (err2) {
-            alert("Access denied. Please allow Camera permissions.");
-        }
+    switch (name) {
+        case "NotAllowedError":
+        case "PermissionDeniedError":
+            return "Camera permission was denied. Allow camera access for this extension and try again.";
+
+        case "NotFoundError":
+        case "DevicesNotFoundError":
+            return "No camera was found. Connect a webcam and try again.";
+
+        case "NotReadableError":
+        case "TrackStartError":
+            return "The camera is already being used by another application. Close Camera, Teams, Zoom, OBS, Phone Link, or other apps using the webcam.";
+
+        case "OverconstrainedError":
+            return `The camera does not support the requested settings${error.constraint ? ` (${error.constraint})` : ""}.`;
+
+        case "SecurityError":
+            return "The browser blocked camera access for security reasons.";
+
+        case "AbortError":
+            return "Camera initialization was interrupted. Please try again.";
+
+        case "TypeError":
+            return "Camera access is unavailable in this extension context.";
+
+        default:
+            return `${name}: ${message}`;
     }
-    
-    // Wait for video to actually start playing
-    return new Promise(resolve => {
-        const video = document.getElementById("cameraPreview");
-        if (video.readyState >= 3) resolve();
-        else video.oncanplay = resolve;
+}
+
+async function waitForVideoReady(video, timeout = 10000) {
+    if (!video) {
+        throw new Error("cameraPreview element was not found.");
+    }
+
+    if (
+        video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+        video.videoWidth > 0
+    ) {
+        return;
+    }
+
+    await new Promise((resolve, reject) => {
+        let settled = false;
+
+        const cleanup = () => {
+            video.removeEventListener("loadedmetadata", onReady);
+            video.removeEventListener("canplay", onReady);
+            video.removeEventListener("error", onError);
+            clearTimeout(timer);
+        };
+
+        const finish = (callback) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            callback();
+        };
+
+        const onReady = () => finish(resolve);
+        const onError = () =>
+            finish(() =>
+                reject(new Error("The camera stream could not be rendered."))
+            );
+
+        const timer = setTimeout(() => {
+            finish(() =>
+                reject(new Error("Timed out while waiting for the camera video."))
+            );
+        }, timeout);
+
+        video.addEventListener("loadedmetadata", onReady, { once: true });
+        video.addEventListener("canplay", onReady, { once: true });
+        video.addEventListener("error", onError, { once: true });
     });
 }
 
-function stopCamera() {
-    if (interviewState.cheatingInterval) {
+function isVirtualCamera(label) {
+    const value = String(label || "").toLowerCase();
+
+    return [
+        "phone link",
+        "virtual",
+        "obs",
+        "manycam",
+        "snap camera",
+        "droidcam"
+    ].some(keyword => value.includes(keyword));
+}
+
+async function selectPhysicalCamera(currentStream) {
+    const currentTrack = currentStream?.getVideoTracks?.()[0];
+    const currentLabel = currentTrack?.label || "";
+
+    // Keep the selected camera when it is a normal physical camera.
+    if (!isVirtualCamera(currentLabel)) {
+        return currentStream;
+    }
+
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+
+        const currentDeviceId =
+            currentTrack?.getSettings?.().deviceId || "";
+
+        const physicalCamera = devices.find(device =>
+            device.kind === "videoinput" &&
+            device.deviceId &&
+            device.deviceId !== currentDeviceId &&
+            !isVirtualCamera(device.label)
+        );
+
+        if (!physicalCamera) {
+            console.warn("No alternative physical camera found.");
+            return currentStream;
+        }
+
+        console.log(
+            "Switching from virtual camera to:",
+            physicalCamera.label
+        );
+
+        currentStream.getTracks().forEach(track => track.stop());
+
+        return await navigator.mediaDevices.getUserMedia({
+            video: {
+                deviceId: { exact: physicalCamera.deviceId },
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+            },
+            audio: false
+        });
+    } catch (error) {
+        console.warn("Could not switch to another camera:", error);
+        return currentStream;
+    }
+}
+
+async function startCamera() {
+    // Remove any stale camera stream before requesting a new one.
+    stopCamera(false);
+
+    if (!isCameraApiAvailable()) {
+        const message =
+            "Camera access is unavailable in this browser/extension context.";
+        console.error(message);
+        alert(message);
+        return false;
+    }
+
+    const { video, overlay } = getCameraElements();
+
+    if (!video) {
+        console.error("cameraPreview element is missing from popup.html.");
+        alert("Camera preview element is missing.");
+        return false;
+    }
+
+    video.autoplay = true;
+    video.muted = true;
+    video.playsInline = true;
+
+    try {
+        console.log("Requesting camera permission...");
+
+        // IMPORTANT: camera only.
+        // Microphone is requested separately by startRecording().
+        let stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                facingMode: "user"
+            },
+            audio: false
+        });
+
+        const initialTrack = stream.getVideoTracks()[0];
+
+        if (!initialTrack) {
+            stream.getTracks().forEach(track => track.stop());
+            throw new Error("No video track was returned by the browser.");
+        }
+
+        console.log(
+            "Camera permission granted:",
+            initialTrack.label || "Unknown camera"
+        );
+
+        // Prefer a physical camera over known virtual/Phone Link cameras.
+        stream = await selectPhysicalCamera(stream);
+
+        const track = stream.getVideoTracks()[0];
+
+        if (!track) {
+            stream.getTracks().forEach(t => t.stop());
+            throw new Error("No usable camera track was returned.");
+        }
+
+        interviewState.cameraStream = stream;
+
+        track.onended = () => {
+            console.warn("Camera track ended unexpectedly.");
+
+            if (interviewState.cameraStream === stream) {
+                interviewState.cameraStream = null;
+            }
+
+            if (video) {
+                video.srcObject = null;
+                video.style.display = "none";
+            }
+
+            if (overlay) {
+                overlay.style.display = "none";
+            }
+        };
+
+        video.srcObject = stream;
+        video.style.display = "block";
+
+        if (overlay) {
+            overlay.style.display = "block";
+        }
+
+        await waitForVideoReady(video);
+
+        try {
+            await video.play();
+        } catch (playError) {
+            console.warn("Video play() warning:", playError);
+        }
+
+        if (overlay) {
+            overlay.width = video.videoWidth || 640;
+            overlay.height = video.videoHeight || 480;
+        }
+
+        console.log(
+            "Camera started successfully:",
+            `${video.videoWidth}x${video.videoHeight}`
+        );
+
+        return true;
+
+    } catch (error) {
+        console.error("========== CAMERA ERROR ==========");
+        console.error("Name:", error?.name);
+        console.error("Message:", error?.message);
+        console.error("Constraint:", error?.constraint);
+        console.error("Error:", error);
+        console.error("==================================");
+
+        stopCamera(false);
+
+        alert(`Camera access failed.\n\n${getCameraErrorMessage(error)}`);
+
+        return false;
+    }
+}
+
+function stopCamera(stopDetection = true) {
+    if (stopDetection && interviewState.cheatingInterval) {
         clearInterval(interviewState.cheatingInterval);
         interviewState.cheatingInterval = null;
     }
+
+    const { video, overlay } = getCameraElements();
+
     if (interviewState.cameraStream) {
-        interviewState.cameraStream.getTracks().forEach(track => track.stop());
-        document.getElementById("cameraPreview").style.display = "none";
-        const overlay = document.getElementById("faceOverlay");
-        if (overlay) overlay.style.display = "none";
+        interviewState.cameraStream.getTracks().forEach(track => {
+            track.onended = null;
+            track.stop();
+        });
+
+        interviewState.cameraStream = null;
+    }
+
+    if (video) {
+        video.pause();
+        video.srcObject = null;
+        video.style.display = "none";
+        video.style.borderColor = "#fff";
+        video.style.boxShadow = "0 2px 10px rgba(0,0,0,0.3)";
+    }
+
+    if (overlay) {
+        const ctx = overlay.getContext("2d");
+
+        if (ctx) {
+            ctx.clearRect(0, 0, overlay.width, overlay.height);
+        }
+
+        overlay.style.display = "none";
     }
 }
 

@@ -7,11 +7,17 @@
     "default_popup": "popup.html",
     "default_icon": {
       "16": "assets/image.png"
-      
     }
   },
-  "permissions": ["storage", "notifications", "tabs", "activeTab", "scripting"],
+  "permissions": [
+    "storage",
+    "notifications",
+    "tabs",
+    "activeTab",
+    "scripting"
+  ],
   "host_permissions": [
+    "http://localhost:5000/*",
     "https://chatgpt-42.p.rapidapi.com/*",
     "https://doc-converter-vdh0.onrender.com/*",
     "https://doc-manipulation.vercel.app/*",
@@ -20,5 +26,4 @@
   "background": {
     "service_worker": "background.js"
   }
-  
 }
