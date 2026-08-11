@@ -883,8 +883,16 @@ Potential future enhancements include:
 The project aims to provide an accessible environment where students and job seekers can **practice interviews independently**, receive AI-assisted feedback, and improve their technical and communication skills through repeated practice.
 
 ---
-
 # 👨‍💻 Author
+
+**Barsharani Gochhayat**
+
+B.Tech — Computer Science & Engineering
+
+Raajdhani Engineering College, Bhubaneswar
+Biju Patnaik University of Technology (BPUT), Odisha
+
+# 👨‍💻 Co-Author
 
 **Manas Ranjan Das**
 
@@ -896,8 +904,6 @@ Biju Patnaik University of Technology (BPUT), Odisha
 ---
 
 # 📜 License
-
-Add your preferred license here, for example:
 
 ```text
 MIT License
